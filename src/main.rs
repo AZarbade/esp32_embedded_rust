@@ -1,9 +1,16 @@
 mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop, hal::peripherals::Peripherals, nvs::EspDefaultNvsPartition,
+    eventloop::EspSystemEventLoop,
+    hal::peripherals::Peripherals,
+    http::{
+        server::{Configuration, EspHttpServer},
+        Method,
+    },
+    nvs::EspDefaultNvsPartition,
 };
 use log::info;
+use std::{thread::sleep, time::Duration};
 use wifi::wifi;
 
 fn main() -> Result<()> {
@@ -26,7 +33,17 @@ fn main() -> Result<()> {
         Some(nvs),
     );
 
-    Ok(())
+    let mut server = EspHttpServer::new(&Configuration::default())
+        .context("ERROR: failed to create web server")?;
+    server.fn_handler("/", Method::Get, |request| {
+        let mut response = request.into_ok_response()?;
+        response.write("hello from esp32".as_bytes())?;
+        Ok(())
+    })?;
+
+    loop {
+        sleep(Duration::from_millis(1000));
+    }
 }
 
 #[toml_cfg::toml_config]
