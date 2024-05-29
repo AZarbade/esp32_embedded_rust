@@ -39,16 +39,17 @@ fn main() -> Result<()> {
     );
 
     // TODO: check if can use anyhow instead of expect
-    let led_pin = Arc::new(Mutex::new(
-        PinDriver::output(peripherals.pins.gpio2).expect("ERROR: faild to get led pin"),
-    ));
+    let led_driver =
+        PinDriver::output(peripherals.pins.gpio2).expect("ERROR: faild to get led pin");
+    let led_pin = Arc::new(Mutex::new(led_driver));
 
     let mut server = EspHttpServer::new(&Configuration::default())
         .context("ERROR: failed to create web server")?;
-    server.fn_handler("/", Method::Get, |request| {
-        // TODO: get rid of these unwraps
+
+    // TODO: get rid of these unwraps
+    server.fn_handler("/led", Method::Get, |request| {
         let mut response = request.into_ok_response().unwrap();
-        response.write("hello from esp32".as_bytes()).unwrap();
+        response.write("LED Toggled!".as_bytes()).unwrap();
         led_pin.lock().unwrap().toggle().unwrap();
         Ok::<(), EspError>(())
     })?;
