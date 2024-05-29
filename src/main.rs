@@ -2,7 +2,7 @@ mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    hal::peripherals::Peripherals,
+    hal::{gpio::PinDriver, peripherals::Peripherals},
     http::{
         server::{Configuration, EspHttpServer},
         Method,
@@ -11,7 +11,11 @@ use esp_idf_svc::{
     sys::EspError,
 };
 use log::info;
-use std::{thread::sleep, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    thread::sleep,
+    time::Duration,
+};
 use wifi::wifi;
 
 fn main() -> Result<()> {
@@ -34,11 +38,18 @@ fn main() -> Result<()> {
         Some(nvs),
     );
 
+    // TODO: check if can use anyhow instead of expect
+    let led_pin = Arc::new(Mutex::new(
+        PinDriver::output(peripherals.pins.gpio2).expect("ERROR: faild to get led pin"),
+    ));
+
     let mut server = EspHttpServer::new(&Configuration::default())
         .context("ERROR: failed to create web server")?;
     server.fn_handler("/", Method::Get, |request| {
+        // TODO: get rid of these unwraps
         let mut response = request.into_ok_response().unwrap();
         response.write("hello from esp32".as_bytes()).unwrap();
+        led_pin.lock().unwrap().toggle().unwrap();
         Ok::<(), EspError>(())
     })?;
 
