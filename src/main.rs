@@ -8,6 +8,7 @@ use esp_idf_svc::{
         Method,
     },
     nvs::EspDefaultNvsPartition,
+    sys::EspError,
 };
 use log::info;
 use std::{thread::sleep, time::Duration};
@@ -36,9 +37,9 @@ fn main() -> Result<()> {
     let mut server = EspHttpServer::new(&Configuration::default())
         .context("ERROR: failed to create web server")?;
     server.fn_handler("/", Method::Get, |request| {
-        let mut response = request.into_ok_response()?;
-        response.write("hello from esp32".as_bytes())?;
-        Ok(())
+        let mut response = request.into_ok_response().unwrap();
+        response.write("hello from esp32".as_bytes()).unwrap();
+        Ok::<(), EspError>(())
     })?;
 
     loop {
