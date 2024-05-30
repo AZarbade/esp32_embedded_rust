@@ -55,6 +55,7 @@ fn main() -> Result<()> {
 
     let mqtt_config = MqttClientConfiguration::default();
     let mut mqtt_client = EspMqttClient::new_cb(&broker_url, &mqtt_config, move |_msg| {})?;
+    // let (mut mqtt_client, _mqtt_connection) = EspMqttClient::new(&broker_url, &mqtt_config)?;
 
     let payload: &[u8] = &[];
     mqtt_client.publish("home/default", QoS::AtLeastOnce, true, payload)?;
