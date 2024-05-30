@@ -2,11 +2,17 @@ mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    hal::peripherals::Peripherals,
+    hal::{
+        adc::{self, attenuation::DB_11},
+        gpio::*,
+        peripherals::Peripherals,
+    },
     mqtt::client::{EspMqttClient, MqttClientConfiguration, QoS},
     nvs::EspDefaultNvsPartition,
 };
 use log::info;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use std::{thread::sleep, time::Duration};
 use wifi::wifi;
 
@@ -15,9 +21,14 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     info!("Getting started...");
-    let peripherals = Peripherals::take().context("ERROR: failed to 'take' peripheral control")?;
-    let sysloop = EspSystemEventLoop::take().context("ERROR: faild to 'take' event loop")?;
-    let nvs = EspDefaultNvsPartition::take().context("ERROR: failed to 'take' NVS partition")?;
+    let peripherals = Peripherals::take().context("failed to 'take' peripheral control")?;
+    let sysloop = EspSystemEventLoop::take().context("faild to 'take' event loop")?;
+    let nvs = EspDefaultNvsPartition::take().context("failed to 'take' NVS partition")?;
+    let mut adc1 = adc::AdcDriver::new(
+        peripherals.adc1,
+        &adc::config::Config::new().calibration(true),
+    )
+    .context("failed to new ADC Driver")?;
 
     let app_config = CONFIG;
 
@@ -30,36 +41,46 @@ fn main() -> Result<()> {
         Some(nvs),
     );
 
-    // WARN: does broker url require port??
+    let mut pin = adc::AdcChannelDriver::<'_, DB_11, Gpio36>::new(peripherals.pins.gpio36)
+        .context("failed to set ADC Pin")?;
+
     let broker_url = if app_config.mqtt_user != "" {
         format!(
             "mqtt://{}:{}@{}",
             app_config.mqtt_user, app_config.mqtt_psk, app_config.mqtt_host,
         )
     } else {
-        format!("mqtt://{}:1883", app_config.mqtt_host)
+        format!("mqtt://{}", app_config.mqtt_host)
     };
 
     let mqtt_config = MqttClientConfiguration::default();
+    let mut mqtt_client = EspMqttClient::new_cb(&broker_url, &mqtt_config, move |_msg| {})?;
 
-    let (mut mqtt_client, _mqtt_connection) =
-        EspMqttClient::new(&broker_url, &mqtt_config).unwrap();
+    let payload: &[u8] = &[];
+    mqtt_client.publish("home/default", QoS::AtLeastOnce, true, payload)?;
 
     loop {
-        println!("in loop...");
-        sleep(Duration::from_secs(1));
-        println!("Publishing on: {broker_url}");
-        let payload = "hello from esp32";
-        let _ = mqtt_client
-            .publish(
-                "wrongcolor/home/default",
-                QoS::AtLeastOnce,
-                true,
-                payload.as_bytes(),
-            )
-            .unwrap();
-        println!("data published!");
+        sleep(Duration::from_millis(100));
+        let reading = adc1.read(&mut pin)?;
+
+        let sensor_reading = SensorReading {
+            heart_rate: reading,
+        };
+
+        let json_string = serde_json::to_string(&sensor_reading)?;
+
+        mqtt_client.publish(
+            "sensors/heart",
+            QoS::AtLeastOnce,
+            false,
+            json_string.as_bytes(),
+        )?;
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SensorReading {
+    heart_rate: u16,
 }
 
 #[toml_cfg::toml_config]
