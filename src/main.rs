@@ -3,12 +3,8 @@ use anyhow::{Context, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::peripherals::Peripherals,
-    http::{
-        server::{Configuration, EspHttpServer},
-        Method,
-    },
+    mqtt::client::{EspMqttClient, MqttClientConfiguration, QoS},
     nvs::EspDefaultNvsPartition,
-    sys::EspError,
 };
 use log::info;
 use std::{thread::sleep, time::Duration};
@@ -34,18 +30,35 @@ fn main() -> Result<()> {
         Some(nvs),
     );
 
-    let mut server = EspHttpServer::new(&Configuration::default())
-        .context("ERROR: failed to create web server")?;
+    // WARN: does broker url require port??
+    let broker_url = if app_config.mqtt_user != "" {
+        format!(
+            "mqtt://{}:{}@{}",
+            app_config.mqtt_user, app_config.mqtt_psk, app_config.mqtt_host,
+        )
+    } else {
+        format!("mqtt://{}:1883", app_config.mqtt_host)
+    };
 
-    // TODO: get rid of these unwraps
-    server.fn_handler("/todo!", Method::Get, |request| {
-        let mut response = request.into_ok_response().unwrap();
-        response.write("todo!".as_bytes()).unwrap();
-        Ok::<(), EspError>(())
-    })?;
+    let mqtt_config = MqttClientConfiguration::default();
+
+    let (mut mqtt_client, _mqtt_connection) =
+        EspMqttClient::new(&broker_url, &mqtt_config).unwrap();
 
     loop {
-        sleep(Duration::from_millis(1000));
+        println!("in loop...");
+        sleep(Duration::from_secs(1));
+        println!("Publishing on: {broker_url}");
+        let payload = "hello from esp32";
+        let _ = mqtt_client
+            .publish(
+                "wrongcolor/home/default",
+                QoS::AtLeastOnce,
+                true,
+                payload.as_bytes(),
+            )
+            .unwrap();
+        println!("data published!");
     }
 }
 
@@ -55,4 +68,10 @@ pub struct Config {
     wifi_ssid: &'static str,
     #[default("")]
     wifi_psk: &'static str,
+    #[default("")]
+    mqtt_user: &'static str,
+    #[default("")]
+    mqtt_psk: &'static str,
+    #[default("broker.local")]
+    mqtt_host: &'static str,
 }
