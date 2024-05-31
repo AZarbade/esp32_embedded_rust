@@ -1,14 +1,7 @@
 mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
-    hal::peripherals::Peripherals,
-    http::{
-        server::{Configuration, EspHttpServer},
-        Method,
-    },
-    nvs::EspDefaultNvsPartition,
-    sys::EspError,
+    eventloop::EspSystemEventLoop, hal::peripherals::Peripherals, nvs::EspDefaultNvsPartition,
 };
 use log::info;
 use std::{thread::sleep, time::Duration};
@@ -19,11 +12,10 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     info!("Getting started...");
-    let peripherals = Peripherals::take().context("ERROR: failed to 'take' peripheral control")?;
-    let sysloop = EspSystemEventLoop::take().context("ERROR: faild to 'take' event loop")?;
-    let nvs = EspDefaultNvsPartition::take().context("ERROR: failed to 'take' NVS partition")?;
-
     let app_config = CONFIG;
+    let peripherals = Peripherals::take().context("failed to 'take' peripheral control")?;
+    let sysloop = EspSystemEventLoop::take().context("faild to 'take' event loop")?;
+    let nvs = EspDefaultNvsPartition::take().context("failed to 'take' NVS partition")?;
 
     info!("Setting up wifi...");
     let _wifi = wifi(
@@ -45,4 +37,10 @@ pub struct Config {
     wifi_ssid: &'static str,
     #[default("")]
     wifi_psk: &'static str,
+    #[default("")]
+    mqtt_user: &'static str,
+    #[default("")]
+    mqtt_psk: &'static str,
+    #[default("broker.local")]
+    mqtt_host: &'static str,
 }
