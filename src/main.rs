@@ -34,16 +34,6 @@ fn main() -> Result<()> {
         Some(nvs),
     );
 
-    let mut server = EspHttpServer::new(&Configuration::default())
-        .context("ERROR: failed to create web server")?;
-
-    // TODO: get rid of these unwraps
-    server.fn_handler("/todo!", Method::Get, |request| {
-        let mut response = request.into_ok_response().unwrap();
-        response.write("todo!".as_bytes()).unwrap();
-        Ok::<(), EspError>(())
-    })?;
-
     loop {
         sleep(Duration::from_millis(1000));
     }
