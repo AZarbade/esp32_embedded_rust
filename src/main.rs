@@ -1,3 +1,4 @@
+mod mqtt;
 mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
@@ -7,13 +8,12 @@ use esp_idf_svc::{
         gpio::*,
         peripherals::Peripherals,
     },
-    mqtt::client::{EspMqttClient, EspMqttConnection, MqttClientConfiguration, QoS},
     nvs::EspDefaultNvsPartition,
 };
 use log::info;
+use mqtt::{mqtt_create, mqtt_run};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::time::Duration;
 use wifi::wifi;
 
 fn main() -> Result<()> {
@@ -65,62 +65,12 @@ fn main() -> Result<()> {
         let json_string = serde_json::to_string(&sensor_reading)?;
 
         mqtt_run(
-            &mut client,
-            &mut connection,
-            "home/sensors/heart",
-            json_string,
+            &mut client,          // --> client
+            &mut connection,      // --> connection
+            "home/sensors/heart", // --> topic
+            json_string,          // --> payload
         )?;
     }
-}
-
-fn mqtt_run(
-    client: &mut EspMqttClient,
-    connection: &mut EspMqttConnection,
-    topic: &str,
-    payload: String,
-) -> Result<()> {
-    std::thread::scope(|s| {
-        info!("Preparing to start MQTT Client");
-
-        // TODO: wtf is stack_size?
-
-        // This block is event watching
-        std::thread::Builder::new()
-            .stack_size(6_000)
-            .spawn_scoped(s, move || {
-                info!("[MQTT] listening for event changes");
-
-                while let Ok(event) = connection.next() {
-                    info!("[Queue] Event: {}", event.payload());
-                }
-
-                info!("Connection closed!");
-            })
-            .unwrap();
-
-        client.subscribe(topic, QoS::AtMostOnce)?;
-        info!("[MQTT] Subscribed to topic: {topic}");
-        std::thread::sleep(Duration::from_millis(500));
-
-        loop {
-            client.enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())?;
-            info!("[MQTT] published \"{payload}\" to topic \"{topic}\"");
-            std::thread::sleep(Duration::from_millis(500));
-        }
-    })
-}
-
-fn mqtt_create(
-    broker_url: &str,
-    client_id: Option<&str>,
-) -> Result<(EspMqttClient<'static>, EspMqttConnection)> {
-    let mqtt_config = MqttClientConfiguration {
-        client_id,
-        ..Default::default()
-    };
-    let (mqtt_client, mqtt_connection) = EspMqttClient::new(&broker_url, &mqtt_config)?;
-
-    Ok((mqtt_client, mqtt_connection))
 }
 
 #[derive(Serialize, Deserialize)]
