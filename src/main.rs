@@ -1,5 +1,5 @@
-mod mqtt;
-mod wifi;
+pub mod mqtt;
+pub mod wifi;
 use anyhow::{Context, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
@@ -8,10 +8,11 @@ use esp_idf_svc::{
         gpio::*,
         peripherals::Peripherals,
     },
+    mqtt::client::QoS,
     nvs::EspDefaultNvsPartition,
 };
 use log::info;
-use mqtt::{mqtt_create, mqtt_run};
+use mqtt::mqtt_create;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use wifi::wifi;
@@ -26,15 +27,6 @@ fn main() -> Result<()> {
     let sysloop = EspSystemEventLoop::take().context("faild to 'take' event loop")?;
     let nvs = EspDefaultNvsPartition::take().context("failed to 'take' NVS partition")?;
 
-    info!("Setting up ADC pin...");
-    let mut adc1 = adc::AdcDriver::new(
-        peripherals.adc1,
-        &adc::config::Config::new().calibration(true),
-    )
-    .context("failed to new ADC Driver")?;
-    let mut pin = adc::AdcChannelDriver::<'_, DB_11, Gpio36>::new(peripherals.pins.gpio36)
-        .context("failed to set ADC Pin")?;
-
     info!("Setting up wifi...");
     let _wifi = wifi(
         app_config.wifi_ssid,
@@ -43,6 +35,19 @@ fn main() -> Result<()> {
         sysloop,
         Some(nvs),
     );
+
+    info!("Setting up heart-rate sensor pin...");
+    let mut pin_heart = adc::AdcDriver::new(
+        peripherals.adc1,
+        &adc::config::Config::new().calibration(true),
+    )
+    .context("failed to new ADC Driver")?;
+    let mut pin = adc::AdcChannelDriver::<'_, DB_11, Gpio36>::new(peripherals.pins.gpio36)
+        .context("failed to set ADC Pin")?;
+
+    let sensor_reading = SensorReading {
+        heart_rate: pin_heart.read(&mut pin)?,
+    };
 
     info!("Setting up MQTT parameters...");
     let broker_url = if app_config.mqtt_user != "" {
@@ -54,23 +59,43 @@ fn main() -> Result<()> {
         format!("mqtt://{}", app_config.mqtt_host)
     };
 
-    let (mut client, mut connection) = mqtt_create(&broker_url, None)?;
+    let (mut client, mut connection) = mqtt_create(&broker_url, None, None, None)?;
+    std::thread::scope(|s| {
+        info!("[MQTT] starting event listner");
 
-    loop {
-        let reading = adc1.read(&mut pin)?;
-        let sensor_reading = SensorReading {
-            heart_rate: reading,
-        };
+        // TODO: what is stack_size?
+        std::thread::Builder::new()
+            .stack_size(6_000)
+            .spawn_scoped(s, move || {
+                info!("[MQTT: Event] listening for event changes");
+                while let Ok(event) = connection.next() {
+                    info!("[MQTT: Queue] Event: {}", event.payload());
+                }
 
-        let json_string = serde_json::to_string(&sensor_reading)?;
+                info!("[MQTT: Event] Connection closed!");
+            })
+            .unwrap();
 
-        mqtt_run(
-            &mut client,          // --> client
-            &mut connection,      // --> connection
-            "home/sensors/heart", // --> topic
-            json_string,          // --> payload
-        )?;
-    }
+        // Mandetory waiting, to give event thread time for setup
+        info!("[MQTT] waiting for event thread to setup...");
+        std::thread::sleep(std::time::Duration::from_secs(5));
+
+        std::thread::Builder::new()
+            .stack_size(6_000)
+            .spawn_scoped(s, move || loop {
+                let topic = "sensor/foo_1";
+                let payload = serde_json::to_string(&sensor_reading).unwrap();
+                info!("[MQTT: Publisher] initializing publisher on topic: {topic}");
+                client
+                    .enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())
+                    .unwrap();
+                info!("[MQTT: Publisher] published \"{payload}\" to topic \"{topic}\"");
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            })
+            .unwrap();
+    });
+
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
