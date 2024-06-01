@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         info!("[MQTT] waiting for event thread to setup...");
         std::thread::sleep(std::time::Duration::from_secs(5));
 
-        let client_clone = Arc::clone(&client);
+        let client_clone_1 = Arc::clone(&client);
         std::thread::Builder::new()
             .stack_size(6_000)
             .spawn_scoped(s, move || {
@@ -94,7 +94,26 @@ fn main() -> Result<()> {
                 let payload = serde_json::to_string(&sensor_reading.reading_1).unwrap();
                 loop {
                     info!("[MQTT: Publisher] initializing publisher on topic: {topic}");
-                    client_clone
+                    client_clone_1
+                        .lock()
+                        .unwrap()
+                        .enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())
+                        .unwrap();
+                    info!("[MQTT: Publisher] published \"{payload}\" to topic \"{topic}\"");
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            })
+            .unwrap();
+
+        let client_clone_2 = Arc::clone(&client);
+        std::thread::Builder::new()
+            .stack_size(6_000)
+            .spawn_scoped(s, move || {
+                let topic = "sensor/foo_2";
+                let payload = serde_json::to_string(&sensor_reading.reading_2).unwrap();
+                loop {
+                    info!("[MQTT: Publisher] initializing publisher on topic: {topic}");
+                    client_clone_2
                         .lock()
                         .unwrap()
                         .enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())
