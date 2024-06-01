@@ -2,6 +2,8 @@
 //! This tracks my learning progress for embedded Rust on ESP32.
 pub mod mqtt;
 pub mod wifi;
+use std::sync::{Arc, Mutex};
+
 use anyhow::{Context, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
@@ -48,7 +50,8 @@ fn main() -> Result<()> {
         .context("failed to set ADC Pin")?;
 
     let sensor_reading = SensorReading {
-        heart_rate: pin_heart.read(&mut pin)?,
+        reading_1: pin_heart.read(&mut pin)?,
+        reading_2: pin_heart.read(&mut pin)?,
     };
 
     info!("Setting up MQTT parameters...");
@@ -61,7 +64,9 @@ fn main() -> Result<()> {
         format!("mqtt://{}", app_config.mqtt_host)
     };
 
-    let (mut client, mut connection) = mqtt_create(&broker_url, None, None, None)?;
+    let (client, mut connection) = mqtt_create(&broker_url, None, None, None)?;
+    let client = Arc::new(Mutex::new(client));
+
     std::thread::scope(|s| {
         info!("[MQTT] starting event listner");
 
@@ -73,7 +78,6 @@ fn main() -> Result<()> {
                 while let Ok(event) = connection.next() {
                     info!("[MQTT: Queue] Event: {}", event.payload());
                 }
-
                 info!("[MQTT: Event] Connection closed!");
             })
             .unwrap();
@@ -82,17 +86,22 @@ fn main() -> Result<()> {
         info!("[MQTT] waiting for event thread to setup...");
         std::thread::sleep(std::time::Duration::from_secs(5));
 
+        let client_clone = Arc::clone(&client);
         std::thread::Builder::new()
             .stack_size(6_000)
-            .spawn_scoped(s, move || loop {
+            .spawn_scoped(s, move || {
                 let topic = "sensor/foo_1";
-                let payload = serde_json::to_string(&sensor_reading).unwrap();
-                info!("[MQTT: Publisher] initializing publisher on topic: {topic}");
-                client
-                    .enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())
-                    .unwrap();
-                info!("[MQTT: Publisher] published \"{payload}\" to topic \"{topic}\"");
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                let payload = serde_json::to_string(&sensor_reading.reading_1).unwrap();
+                loop {
+                    info!("[MQTT: Publisher] initializing publisher on topic: {topic}");
+                    client_clone
+                        .lock()
+                        .unwrap()
+                        .enqueue(topic, QoS::AtMostOnce, false, payload.as_bytes())
+                        .unwrap();
+                    info!("[MQTT: Publisher] published \"{payload}\" to topic \"{topic}\"");
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
             })
             .unwrap();
     });
@@ -102,7 +111,8 @@ fn main() -> Result<()> {
 
 #[derive(Serialize, Deserialize)]
 struct SensorReading {
-    heart_rate: u16,
+    reading_1: u16,
+    reading_2: u16,
 }
 
 #[toml_cfg::toml_config]
