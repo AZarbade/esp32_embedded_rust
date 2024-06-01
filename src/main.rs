@@ -1,3 +1,5 @@
+//! This project is experimental only and should not be used in production code.
+//! This tracks my learning progress for embedded Rust on ESP32.
 pub mod mqtt;
 pub mod wifi;
 use anyhow::{Context, Result};

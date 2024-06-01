@@ -1,4 +1,6 @@
-// credits to: https://github.com/esp-rs/std-training/blob/main/common/lib/wifi/src/lib.rs
+//! Wifi helper module
+//!
+//! credits to: <https://github.com/esp-rs/std-training/blob/main/common/lib/wifi/src/lib.rs>
 use anyhow::Result;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
@@ -9,6 +11,36 @@ use esp_idf_svc::{
 };
 use log::info;
 
+/// Connects to a Wi-Fi network using the provided SSID and password.
+///
+/// This function configures and connects to a Wi-Fi network specified by the `ssid` and `pass` parameters.
+/// It performs the following steps:
+///
+/// # Arguments
+///
+/// * `ssid` - A string slice representing the SSID (name) of the Wi-Fi network to connect to.
+/// * `pass` - A string slice representing the password for the Wi-Fi network.
+/// * `modem` - An implementation of the `Peripheral` trait for the modem used by the Wi-Fi interface.
+/// * `sysloop` - An instance of `EspSystemEventLoop` for handling system events.
+/// * `nvs` - An optional instance of `EspDefaultNvsPartition` for non-volatile storage.
+///
+/// # Returns
+///
+/// * `Ok(Box<EspWifi<'static>>)` - A boxed instance of `EspWifi` if the Wi-Fi connection is successful.
+/// * `Err(EspError)` - An `EspError` if there was an error during the Wi-Fi configuration or connection process.
+///
+/// # Panics
+///
+/// This function may panic if:
+///
+/// - The SSID does not fit into a `String<32>` buffer.
+/// - The password does not fit into a `String<64>` buffer.
+///
+/// # Examples
+///
+/// ```
+/// let _wifi = wifi("Wifi SSID", "Wifi Password", peripherals.modem, sysloop, Some(nvs));
+/// ```
 pub fn wifi(
     ssid: &str,
     pass: &str,
