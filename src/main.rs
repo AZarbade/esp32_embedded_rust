@@ -2,7 +2,6 @@
 //! This tracks my learning progress for embedded Rust on ESP32.
 pub mod mqtt;
 pub mod wifi;
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use esp_idf_svc::{
@@ -19,6 +18,7 @@ use log::info;
 use mqtt::mqtt_create;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::sync::{Arc, Mutex};
 use wifi::wifi;
 
 fn main() -> Result<()> {
@@ -84,7 +84,7 @@ fn main() -> Result<()> {
 
         // Mandetory waiting, to give event thread time for setup
         info!("[MQTT] waiting for event thread to setup...");
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
         let client_clone_1 = Arc::clone(&client);
         std::thread::Builder::new()
